@@ -109,6 +109,12 @@ button:focus-visible{outline:3px solid var(--b);outline-offset:2px}
 .cd small{display:block;color:#fff;padding:4px 6px;font-size:12px;letter-spacing:.06em}
 .cd b{display:block;padding:12px 4px;font-size:clamp(16px,5vw,22px)}
 
+/* Boshlash ekrani va xabarlar */
+.end.st h1{color:var(--g)}
+.end.st p{margin:0;font-size:17px;color:var(--ink);max-width:340px}
+.toast{position:fixed;left:12px;right:12px;bottom:calc(16px + env(safe-area-inset-bottom,0px));max-width:496px;margin:0 auto;background:var(--strong);color:var(--bg);border-radius:14px;padding:12px 16px;font-size:15px;z-index:9;display:none}
+.toast.on{display:block}
+
 @media(min-width:600px){#app{border-left:2px solid var(--line);border-right:2px solid var(--line)}}
 @media(max-height:620px){.end .em{font-size:56px}.q{gap:10px}.foot{padding-top:10px;padding-bottom:calc(12px + env(safe-area-inset-bottom,0px))}.cards{margin:8px 0}}
 @media(prefers-reduced-motion:no-preference){
@@ -121,6 +127,8 @@ button:focus-visible{outline:3px solid var(--b);outline-offset:2px}
 </head>
 <body>
 <div id="app"></div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<audio id="au" preload="none" playsinline></audio>
 <script>
 const UNITS=[
 {t:"Fe‘llar",d:"Harakat va kundalik ishlar",c:"#58CC02",cd:"#58A700",n:[0,5,10],items:[["идти","piyoda borish"],["ехать","transportda borish"],["кушать / есть","yeyish"],["пить","ichish"],["работать","ishlash"],["учиться","o‘qish"],["спать","uxlash"],["отдыхать","dam olish"],["смотреть","ko‘rish"],["слушать","eshitish"]]},
@@ -137,10 +145,94 @@ try{Object.assign(S,JSON.parse(localStorage.getItem("duo-ru")||"{}"))}catch(e){}
 const save=()=>{try{localStorage.setItem("duo-ru",JSON.stringify(S))}catch(e){}};
 const sh=a=>{a=a.slice();for(let i=a.length;i>1;i--){const j=Math.random()*i|0;[a[i-1],a[j]]=[a[j],a[i-1]]}return a};
 const f1=r=>r.split(" / ")[0];
-let ac;
-const beep=(f,d=.12)=>{try{ac=ac||new (window.AudioContext||window.webkitAudioContext)();if(ac.state==="suspended")ac.resume();const o=ac.createOscillator(),g=ac.createGain();o.frequency.value=f;g.gain.value=.07;o.connect(g);g.connect(ac.destination);o.start();o.stop(ac.currentTime+d)}catch(e){}};
-const say=(t,r=.85)=>{try{const u=new SpeechSynthesisUtterance(f1(t));u.lang="ru-RU";u.rate=r;speechSynthesis.cancel();speechSynthesis.speak(u)}catch(e){}};
+
+/* ---------- Xabar (xatolar jim qolmasin) ---------- */
+let tt;
+const note=(m,ms=4500)=>{const t=$("#toast");t.textContent=m;t.classList.add("on");clearTimeout(tt);tt=setTimeout(()=>t.classList.remove("on"),ms)};
+const err=(m,e)=>{console.error(m,e||"");note("⚠️ "+m)};
+
+/* ---------- Ovoz tizimi ---------- */
+const AU=$("#au");
+let ac=null,voice=null,voiceOK=false,tmr=null,U=null,lastGoogleErr=0;
+const SIL="data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=";
+
+// Bitta umumiy AudioContext, har safar qayta yoqiladi
+const beep=(f,d=.12)=>{
+  try{
+    if(!ac)ac=new (window.AudioContext||window.webkitAudioContext)();
+    if(ac.state!=="running")ac.resume();
+    const o=ac.createOscillator(),g=ac.createGain();
+    o.frequency.value=f;g.gain.value=.07;
+    o.connect(g);g.connect(ac.destination);
+    o.start();o.stop(ac.currentTime+d);
+    o.onended=()=>{try{o.disconnect();g.disconnect()}catch(e){}};
+  }catch(e){err("Pik tovushi ishlamadi: "+e.message,e)}
+};
+
+const pickVoice=()=>{
+  if(!("speechSynthesis"in window))return null;
+  const vs=speechSynthesis.getVoices().filter(v=>/^ru/i.test((v.lang||"").replace("_","-")));
+  return vs.find(v=>v.localService)||vs[0]||null;
+};
+// Ovozlar ro'yxati kech yuklanadi, shuning uchun kutamiz (3 soniyagacha)
+const loadVoices=()=>new Promise(res=>{
+  if(!("speechSynthesis"in window))return res(null);
+  voice=pickVoice();if(voice)return res(voice);
+  let n=0;
+  speechSynthesis.onvoiceschanged=()=>{voice=pickVoice();if(voice){clearInterval(iv);res(voice)}};
+  const iv=setInterval(()=>{voice=pickVoice();if(voice||++n>15){clearInterval(iv);res(voice)}},200);
+});
+
+// Google ovozi (rus ovozi telefonda bo'lmasa, internet kerak)
+const gsay=(txt,r)=>{
+  try{
+    AU.pause();
+    AU.src="https://translate.google.com/translate_tts?ie=UTF-8&client=tw-ob&tl=ru&q="+encodeURIComponent(txt);
+    AU.playbackRate=r<.7?.7:1;
+    const p=AU.play();
+    if(p&&p.catch)p.catch(e=>{if(Date.now()-lastGoogleErr>4000){lastGoogleErr=Date.now();err("Rus ovozi chiqmadi. Internetni va media ovozini tekshiring.",e)}});
+  }catch(e){err("Google ovozi ishlamadi: "+e.message,e)}
+};
+
+const say=(t,r=.85)=>{
+  const txt=f1(t);
+  if(!voice){gsay(txt,r);return}
+  try{
+    clearTimeout(tmr);AU.pause();
+    speechSynthesis.cancel();
+    U=new SpeechSynthesisUtterance(txt); // global o'zgaruvchida saqlanadi, Chrome o'chirib yubormasin
+    U.voice=voice;U.lang=voice.lang;U.rate=r;
+    U.onerror=e=>{if(e.error==="canceled"||e.error==="interrupted")return;err("Ovoz xatosi ("+e.error+"), Google ovoziga o‘tildi.");voice=null;gsay(txt,r)};
+    // cancel() dan keyin darrov speak() Chrome'da gapni tushirib yuboradi
+    tmr=setTimeout(()=>{try{speechSynthesis.resume();speechSynthesis.speak(U)}catch(e){err("Ovoz xatosi: "+e.message,e)}},90);
+  }catch(e){err("Ovoz xatosi: "+e.message,e);voice=null;gsay(txt,r)}
+};
+
+// "Boshlash" bosilganda chaqiriladi: brauzer ovozni ochadi
+async function initAudio(){
+  try{ac=ac||new (window.AudioContext||window.webkitAudioContext)();await ac.resume()}catch(e){err("AudioContext ochilmadi: "+e.message,e)}
+  beep(660,.08);
+  try{if("speechSynthesis"in window){const u=new SpeechSynthesisUtterance(" ");u.volume=0;speechSynthesis.speak(u)}}catch(e){}
+  try{AU.src=SIL;const p=AU.play();if(p&&p.catch)await p.catch(()=>{})}catch(e){}
+  await loadVoices();
+  voiceOK=true;
+}
+
 const OFF=[0,40,66,40,0,-40,-66,-40];
+
+/* ---------- Boshlash ekrani ---------- */
+function splash(){
+  app.innerHTML=`<div class="end st"><div class="em pop">🐫</div><h1>Ruscha o‘rganamiz</h1><p id="stt">Ovoz bilan o‘rganish uchun “Boshlash” tugmasini bosing.</p></div><div class="foot"><button class="btn" id="go0">Boshlash</button></div>`;
+  const b=$("#go0");
+  b.onclick=async()=>{
+    b.disabled=true;b.textContent="Ovoz yuklanmoqda…";
+    $("#stt").textContent="Rus ovozi qidirilmoqda…";
+    await initAudio();
+    if(voice)note("✔ Rus ovozi tayyor: "+voice.name,3000);
+    else note("Telefonda rus ovozi yo‘q. Google ovoziga o‘tildi, internet kerak.",6000);
+    home();
+  };
+}
 
 /* ---------- Bosh sahifa ---------- */
 function home(){
@@ -296,9 +388,10 @@ function end(win){
 }
 
 document.addEventListener("keydown",e=>{
-  if(e.key==="Enter"){const b=$("#nx")||$("#chk");if(b&&!b.disabled&&b.style.visibility!=="hidden"&&document.activeElement!==b)b.click()}
+  if(e.key==="Enter"){const b=$("#nx")||$("#chk")||$("#go0");if(b&&!b.disabled&&b.style.visibility!=="hidden"&&document.activeElement!==b)b.click()}
 });
-home();
+window.addEventListener("error",e=>err("Xato: "+e.message));
+splash();
 </script>
 </body>
 </html>
