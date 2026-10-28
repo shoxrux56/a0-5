@@ -6,7 +6,7 @@
 <title>Ruscha o‘rganamiz</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Nunito:wght@700;800;900&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Nunito:wght@700;800;900&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
 <style>
 :root{
   --bg:#fff;--card:#fff;--ink:#4B4B4B;--strong:#3C3C3C;--mut:#AFAFAF;--line:#E5E5E5;
@@ -42,7 +42,7 @@ button:focus-visible{outline:3px solid var(--b);outline-offset:2px}
 .unit .ic{font-size:34px;flex:none}
 .nw{display:flex;justify-content:center;margin-bottom:20px;position:relative}
 .node{width:78px;height:72px;border-radius:50%;border:0;border-bottom:8px solid;font-size:30px;display:grid;place-items:center;color:#fff;position:relative}
-.node:active{transform:translateY(5px);border-bottom-width:3px}
+.node:active{transform:translateY(5px)}
 .node.lock{background:var(--lk);border-color:var(--lkd);color:var(--mut)}
 .node.done{background:var(--y);border-color:var(--yd)}
 .bub{position:absolute;top:-40px;background:var(--bg);border:2px solid var(--line);border-radius:12px;padding:5px 12px;font-size:14px;color:var(--g);white-space:nowrap;letter-spacing:.06em}
@@ -64,10 +64,10 @@ button:focus-visible{outline:3px solid var(--b);outline-offset:2px}
 .spk{background:none;border:0;font-size:26px;padding:0;flex:none}
 .big{width:clamp(76px,26vw,110px);height:clamp(76px,26vw,110px);border-radius:24px;background:var(--b);border:0;border-bottom:6px solid var(--bd);font-size:clamp(32px,11vw,48px);margin:6px auto;display:grid;place-items:center;flex:none}
 .slow{width:60px;height:56px;border-radius:16px;background:var(--b);border:0;border-bottom:5px solid var(--bd);font-size:26px;margin:0 auto;display:grid;place-items:center;flex:none}
-.big:active,.slow:active{transform:translateY(4px);border-bottom-width:2px}
+.big:active,.slow:active{transform:translateY(4px)}
 .opts{display:grid;gap:10px}
 .opt,.tile{background:var(--card);color:var(--ink);border:2px solid var(--line);border-bottom-width:5px;border-radius:16px;padding:14px 16px;font-size:clamp(16px,4.8vw,18px);text-align:left;overflow-wrap:anywhere}
-.opt:active:not(:disabled),.tile:active:not(:disabled){transform:translateY(2px);border-bottom-width:3px}
+.opt:active:not(:disabled),.tile:active:not(:disabled){transform:translateY(2px)}
 .opt.sel,.tile.sel{border-color:var(--b);background:var(--selbg);color:var(--b)}
 .opt.ok,.tile.ok{border-color:var(--g);background:var(--okbg);color:var(--okfg);opacity:.7}
 .opt.no,.tile.no{border-color:var(--r);background:var(--badbg);color:var(--badfg)}
@@ -95,7 +95,7 @@ button:focus-visible{outline:3px solid var(--b);outline-offset:2px}
 .foot h3{margin:0 0 4px;font-size:clamp(19px,5.6vw,22px);font-weight:900}
 .foot p{margin:0 0 14px;font-size:16px}
 .btn{width:100%;background:var(--g);color:#fff;border:0;border-bottom:5px solid var(--gd);border-radius:16px;padding:14px;font-size:17px;letter-spacing:.5px;text-transform:uppercase}
-.btn:active:not(:disabled){transform:translateY(3px);border-bottom-width:2px}
+.btn:active:not(:disabled){transform:translateY(3px)}
 .btn:disabled{background:var(--lk);border-color:var(--lkd);color:var(--mut);cursor:default}
 .foot.bad .btn{background:var(--r);border-color:var(--rd)}
 .btn.ghost{background:var(--card);color:var(--b);border:2px solid var(--line);border-bottom-width:5px}
@@ -209,28 +209,30 @@ const say=(t,r=.85)=>{
 };
 
 // "Boshlash" bosilganda chaqiriladi: brauzer ovozni ochadi
-async function initAudio(){
-  try{ac=ac||new (window.AudioContext||window.webkitAudioContext)();await ac.resume()}catch(e){err("AudioContext ochilmadi: "+e.message,e)}
+function initAudio(){
+  try{ac=ac||new(window.AudioContext||window.webkitAudioContext)();ac.resume()}catch(e){err("AudioContext ochilmadi: "+e.message,e)}
   beep(660,.08);
   try{if("speechSynthesis"in window){const u=new SpeechSynthesisUtterance(" ");u.volume=0;speechSynthesis.speak(u)}}catch(e){}
-  try{AU.src=SIL;const p=AU.play();if(p&&p.catch)await p.catch(()=>{})}catch(e){}
-  await loadVoices();
-  voiceOK=true;
+  try{AU.src=SIL;const p=AU.play();if(p&&p.catch)p.catch(()=>{})}catch(e){}
+  voice=pickVoice();
 }
 
+if("speechSynthesis"in window){try{speechSynthesis.getVoices();speechSynthesis.onvoiceschanged=()=>{voice=voice||pickVoice()}}catch(e){}}
 const OFF=[0,40,66,40,0,-40,-66,-40];
 
 /* ---------- Boshlash ekrani ---------- */
 function splash(){
-  app.innerHTML=`<div class="end st"><div class="em pop">🐫</div><h1>Ruscha o‘rganamiz</h1><p id="stt">Ovoz bilan o‘rganish uchun “Boshlash” tugmasini bosing.</p></div><div class="foot"><button class="btn" id="go0">Boshlash</button></div>`;
+  app.innerHTML=`<div class="end st"><div class="em pop">🐫</div><h1>Ruscha o‘rganamiz</h1><p id="stt">“Boshlash” tugmasini bosing, men sizga “Привет!” deyman.</p></div><div class="foot"><button class="btn" id="go0">Boshlash</button></div>`;
   const b=$("#go0");
-  b.onclick=async()=>{
-    b.disabled=true;b.textContent="Ovoz yuklanmoqda…";
-    $("#stt").textContent="Rus ovozi qidirilmoqda…";
-    await initAudio();
-    if(voice)note("✔ Rus ovozi tayyor: "+voice.name,3000);
-    else note("Telefonda rus ovozi yo‘q. Google ovoziga o‘tildi, internet kerak.",6000);
+  b.onclick=()=>{
+    if(b.dataset.on)return;b.dataset.on="1";
+    initAudio();
+    say("Привет!",.9);
     home();
+    loadVoices().then(()=>{
+      if(voice)note("✔ Rus ovozi tayyor: "+voice.name,3000);
+      else note("Telefonda rus ovozi yo‘q. Google ovoziga o‘tildi, internet kerak.",6000);
+    });
   };
 }
 
